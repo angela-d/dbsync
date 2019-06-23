@@ -1,0 +1,135 @@
+#!/bin/bash
+
+## note!
+# run this script in a level above public/www; inaccessible to the outside world
+# a .cnf file with your credentials will be created; this script will chmod it for user-specific permissions & also adds the .ht prefix;
+# so atleast in apache environments, is blocked to the outside world by default
+#
+# if this script is being ran in a publicly accessible directory, you should also make attempts to access the .htmergedev.cnf file without
+# required permission, to ensure it is not served
+#
+# ideally, do not use your "root" db user; but a dedicated user specifically for backups with only the permissions on the db(s) it requires
+
+# bash check
+if [ ! "$BASH_VERSION" ];
+	then
+		echo "Run this script directly; with ./$0, rather than \"sh $0\""
+		exit 0
+fi
+
+# make sure we're not in commonly insecure directories for this type of script
+if [[ $PWD == '/var/www/' || $PWD == '/var/www/html/' || $PWD == '/var/www/public_html/' ]];
+	then
+		echo "Please move this script into a NON public directory!"
+		exit 0
+fi
+
+CONF_FILE="$HOME/.htdbsync.cnf"
+
+# check if this is first run by existence of the cnf file; if not, execute the script
+if [ -f "$CONF_FILE" ];
+	then
+		#make sure the permissions are secure
+		if [ -x "$CONF_FILE" ];
+			then
+				echo "$CONF_FILE is executable. Please inspect and fix the permissions.  Exiting..."
+				exit 0
+			fi
+
+		# parse the contents of the config
+    # shellcheck source=/dev/null
+		source "$CONF_FILE"
+    STOP_DB='false'
+
+    # if mysql is not running, start it
+    if [ "$(pgrep -f mysql)" == "" ];
+    then
+
+        service mysql start
+        # also send a stop signal, since it's not running for a reason (most likely)
+        STOP_DB='true'
+
+    fi
+
+			# purge the destination db & prepare it for syncing with the source db
+			echo "  Purging all databases..."
+      mysql -u"$DEST_DB_USR" -p"$DEST_DB_PWD" -e "show databases" | grep -v Database | grep -v information_schema | grep -v mysql | grep -v performance_schema | grep -v phpmyadmin | gawk '{print "drop database `" $1 "`;"}' | mysql -u"$DEST_DB_USR" -p"$DEST_DB_PWD"
+
+      # shellcheck source=/dev/null
+			# import new copies of the databases
+			echo "  Importing databases..."
+      DATE=$(date +%Y%m%d)
+      FILENAME="$DB_DIR"sqlbackup-"$DATE".sql
+      BZIP_FN="$FILENAME.bz2"
+
+      if [ ! -f "$BZIP_FN" ];
+      then
+        logger -s "$BZIP_FN does not exist; nothing to import"
+        exit 1
+			else
+        # extract + import
+        bzip2 -dk "$BZIP_FN"
+        mysql -u"$DEST_DB_USR" -p"$DEST_DB_PWD" < "$FILENAME"
+
+        # remove the extracted file, once complete
+        rm "$FILENAME"
+      fi
+
+			echo "  DONE!"
+
+      if [ "$STOP_DB" == 'true' ];
+      then
+        service mysql stop
+      fi
+
+
+	# first run; prompt for config setup
+	elif [[ ! -f $CONF_FILE ]];
+		then
+
+		# start with a clean terminal
+		clear
+
+		# welcome !
+		echo -e "This script will create a config file at $CONF_FILE with credentials provided by you, in the following prompts.\n"
+		echo -e "It will NOT validate/check your answers, if you mess up, just delete the .cnf file it creates and re-run this script."
+		echo -e ">> Press enter to continue. <<"
+
+		# validate user is paying attention
+    # shellcheck disable=SC2034
+		read -r confirm
+
+		# create a hidden file for config on first run
+		touch "$CONF_FILE"
+		# assign owner-only access
+		chmod 600 "$CONF_FILE"
+
+		echo -e "\n############################\n"
+
+		echo -e "\n\n### DATABASE CREDENTIALS ###\n"
+
+		echo -e "\n\nDestination database user:"
+		read -r DEST_USR
+		echo "DEST_DB_USR=$DEST_USR" >> "$CONF_FILE"
+
+		echo -e "\n\nDestination database password:"
+		read -r DEST_PWD
+		echo "DEST_DB_PWD=$DEST_PWD" >> "$CONF_FILE"
+
+    echo -e "\n\nDirectory where your .bz2 backups are held in format: sqlbackup-YYYMMDD.sql.bz2\nIncluding ending / -- ie. /storage/databases/:"
+		read -r DB_DIR
+
+
+    if [ ! -d "$DB_DIR" ];
+    then
+      echo -e "\n\nDirectory does not exist, enter a full path to the directory:"
+    else
+		  echo "DB_DIR=$DB_DIR" >> "$CONF_FILE"
+    fi
+
+
+		echo -e "...DONE!\n"
+		echo -e "Should you need to edit the config for this script in the future, you can find it at: $PWD/$CONF_FILE"
+		echo "To run this script (manually): ./dbsync -- to auto run, create a cron pointing to:  $PWD/dbsync"
+		exit 0
+fi
