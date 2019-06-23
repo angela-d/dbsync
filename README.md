@@ -41,6 +41,19 @@ With **ignore_this_database** being the database name of the database you want t
 ### Limits
 The largest (total) .sql file imported with this script was around 3MB.  It could undoubtedly handle much larger, but it's not optimized for it - use at your own risk.
 
+### Synchronization Desktop Prompts (optional)
+If you're on a Linux desktop (and have something like [libnotify-bin](https://packages.debian.org/search?keywords=libnotify-bin) installed) you can display prompts when synchronization-related events occur.
+
+Example:
+
+![Desktop notification](rotate.png)
+```bash
+10 14 * * 0 cd /storage/db_backups/ && /usr/bin/find /storage/db_backups/* -name "sqlbackup-*.sql.bz2" -mtime +30 -exec rm {} \; && notify-send -i access "Synchronization" -u critical "Database rotation complete"
+```
+This cron runs at 2:10pm on Sunday and deletes any backup older than 30 days.  It will notify me on my desktop once the process is complete.
+
+The above is not part of this script but can be used as a companion cron - modify to suit your environment.
+
 ## Install
 ```bash
 git clone https://github.com/angela-d/dbsync.git && cd dbsync && ./dbsync
