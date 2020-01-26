@@ -45,7 +45,7 @@ then
 	# if mysql is not running, start it
 	if [ "$(pgrep -f mysql)" == "" ];
 	then
-		service mysql start
+		/usr/sbin/service mysql start
 		# also send a stop signal, since it's not running for a reason (most likely)
 		STOP_DB='true'
 	fi
