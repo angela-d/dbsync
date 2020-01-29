@@ -78,7 +78,7 @@ then
 
 	if [ "$STOP_DB" == 'true' ];
 	then
-		service mysql stop
+		/usr/sbin/service mysql stop
 	fi
 
 
